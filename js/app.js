@@ -26,8 +26,88 @@ window.handleCrestError = function(imgEl) {
   imgEl.replaceWith(badge);
 };
 
+// Throttled lazy-loader for real club crests (prevents 96+ simultaneous Wikimedia requests & 429 rate-limits)
+const CREST_PLACEHOLDER_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const crestLoadQueue = [];
+let activeCrestLoads = 0;
+const MAX_CONCURRENT_CREST_LOADS = 4;
+let crestObserver = null;
+let crestScanTimer = null;
+
+function pumpCrestQueue() {
+  while (activeCrestLoads < MAX_CONCURRENT_CREST_LOADS && crestLoadQueue.length > 0) {
+    const img = crestLoadQueue.shift();
+    if (!img || !img.isConnected) continue;
+    const realSrc = img.getAttribute('data-crest-src');
+    if (!realSrc) continue;
+
+    img.removeAttribute('data-crest-src');
+    activeCrestLoads++;
+    const finish = () => {
+      activeCrestLoads = Math.max(0, activeCrestLoads - 1);
+      setTimeout(pumpCrestQueue, 40);
+    };
+    img.addEventListener('load', finish, { once: true });
+    img.addEventListener('error', finish, { once: true });
+    img.src = realSrc;
+  }
+}
+
+function enqueueCrestImg(img) {
+  if (!img || !img.getAttribute('data-crest-src')) return;
+  if (img.dataset.crestQueued === '1') return;
+  img.dataset.crestQueued = '1';
+  crestLoadQueue.push(img);
+  pumpCrestQueue();
+}
+
+function scanLazyCrests(root = document) {
+  if (!root || typeof root.querySelectorAll !== 'function') return;
+  const pending = root.querySelectorAll('img[data-crest-src]');
+  if (!pending.length) return;
+
+  if (typeof IntersectionObserver !== 'undefined') {
+    if (!crestObserver) {
+      crestObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const target = entry.target;
+            crestObserver.unobserve(target);
+            enqueueCrestImg(target);
+          }
+        });
+      }, { rootMargin: '140px 0px' });
+    }
+    pending.forEach((img) => {
+      if (img.dataset.crestObserved === '1') return;
+      img.dataset.crestObserved = '1';
+      crestObserver.observe(img);
+    });
+  } else {
+    pending.forEach(enqueueCrestImg);
+  }
+}
+
+function scheduleLazyCrestScan() {
+  if (crestScanTimer) clearTimeout(crestScanTimer);
+  crestScanTimer = setTimeout(() => scanLazyCrests(document), 30);
+}
+
+if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+  const startCrestMutationObserver = () => {
+    if (!document.body) return;
+    const mo = new MutationObserver(() => scheduleLazyCrestScan());
+    mo.observe(document.body, { childList: true, subtree: true });
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startCrestMutationObserver);
+  } else {
+    startCrestMutationObserver();
+  }
+}
+
 // Helper to render club crest images or fallback styled emblems
-function renderCrestHtml(crestUrl, clubOrShort = 'FC', style = 'width:28px;height:28px;') {
+function renderCrestHtml(crestUrl, clubOrShort = 'FC', style = 'width:28px;height:28px;', eager = false) {
   let shortName = 'FC';
   let color = '#00f0ff';
 
@@ -46,7 +126,11 @@ function renderCrestHtml(crestUrl, clubOrShort = 'FC', style = 'width:28px;heigh
     return fallbackBadge;
   }
 
-  return `<img src="${crestUrl}" alt="${shortName}" style="${style}; object-fit: contain; vertical-align: middle; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));" data-short="${tagText}" data-color="${color}" onError="window.handleCrestError(this)" />`;
+  if (eager || crestUrl.startsWith('data:')) {
+    return `<img src="${crestUrl}" alt="${shortName}" decoding="async" referrerpolicy="no-referrer" style="${style}; object-fit: contain; vertical-align: middle; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));" data-short="${tagText}" data-color="${color}" onError="window.handleCrestError(this)" />`;
+  }
+
+  return `<img src="${CREST_PLACEHOLDER_SRC}" data-crest-src="${crestUrl}" alt="${shortName}" loading="lazy" decoding="async" referrerpolicy="no-referrer" style="${style}; object-fit: contain; vertical-align: middle; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));" data-short="${tagText}" data-color="${color}" onError="window.handleCrestError(this)" />`;
 }
 const CLUB_STADIUMS = {
   real_madrid: 'Santiago Bernabéu', barcelona: 'Spotify Camp Nou', atletico_madrid: 'Cívitas Metropolitano',
@@ -95,7 +179,9 @@ function bootApp() {
 
   initOrientationPrompt();
   initUI();
-  renderTeamSelectGrid('ALL');
+  if (!state.hasSavedCareer) {
+    renderTeamSelectGrid('ALL');
+  }
   
   updateHeaderStats();
   renderDashboard();
@@ -105,6 +191,7 @@ function bootApp() {
   renderOffice();
   renderStandingsTable();
   renderCompetitionsHub();
+  scheduleLazyCrestScan();
 }
 
 if (document.readyState === 'loading') {
@@ -346,7 +433,7 @@ function updateHeaderStats() {
   if (seasonTitle) seasonTitle.innerText = `${state.managerName} • Season ${state.season}`;
   const crestEl = document.getElementById('headerClubCrest');
   if (crestEl) {
-    crestEl.innerHTML = renderCrestHtml(state.myClub.crest, state.myClub, 'width:42px;height:42px;');
+    crestEl.innerHTML = renderCrestHtml(state.myClub.crest, state.myClub, 'width:42px;height:42px;', true);
   }
   document.getElementById('headerManagerRating').innerText = `${state.managerRating}%`;
   document.getElementById('headerBudget').innerText = `€${(state.myClub.budget / 1000000).toFixed(1)}M`;
@@ -369,11 +456,11 @@ function renderDashboard() {
   const nextFix = state.getNextFixture();
   if (nextFix) {
     const homeCrestEl = document.getElementById('homeTeamCrest');
-    if (homeCrestEl) homeCrestEl.innerHTML = renderCrestHtml(nextFix.homeClub.crest, nextFix.homeClub, 'width:64px;height:64px;');
+    if (homeCrestEl) homeCrestEl.innerHTML = renderCrestHtml(nextFix.homeClub.crest, nextFix.homeClub, 'width:64px;height:64px;', true);
     document.getElementById('homeTeamName').innerText = nextFix.homeClub.name;
 
     const awayCrestEl = document.getElementById('awayTeamCrest');
-    if (awayCrestEl) awayCrestEl.innerHTML = renderCrestHtml(nextFix.awayClub.crest, nextFix.awayClub, 'width:64px;height:64px;');
+    if (awayCrestEl) awayCrestEl.innerHTML = renderCrestHtml(nextFix.awayClub.crest, nextFix.awayClub, 'width:64px;height:64px;', true);
     document.getElementById('nextOpponentName').innerText = nextFix.awayClub.name;
     const homeLabel = document.querySelector('#homeTeamCrest')?.closest('.team-box')?.querySelector('.team-box-rating');
     const awayLabel = document.querySelector('#awayTeamCrest')?.closest('.team-box')?.querySelector('.team-box-rating');
