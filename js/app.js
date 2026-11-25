@@ -26,108 +26,110 @@ window.handleCrestError = function(imgEl) {
   imgEl.replaceWith(badge);
 };
 
-// Official Real Club Crest Hydrator (ESPN Public CDN + localStorage cache)
-const CREST_CACHE_KEY = 'fc26_espn_crest_cache_v3';
-const CREST_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-let resolvedCrestMap = {};
+// Verified Static Official Club Crests (GitHub Fastly CDN) + ESPN Fallback for Relegated Clubs
+const CREST_CACHE_KEY = 'fc26_espn_crest_cache_v4';
+const CREST_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const STATIC_CREST_MAP = {
+  "real_madrid": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Real%20Madrid.png",
+  "barcelona": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/FC%20Barcelona.png",
+  "atletico_madrid": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Atl%C3%A9tico%20de%20Madrid.png",
+  "athletic_bilbao": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Athletic%20Bilbao.png",
+  "real_sociedad": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Real%20Sociedad.png",
+  "real_betis": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Real%20Betis%20Balompi%C3%A9.png",
+  "villarreal": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Villarreal%20CF.png",
+  "sevilla": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Sevilla%20FC.png",
+  "valencia": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Valencia%20CF.png",
+  "osasuna": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/CA%20Osasuna.png",
+  "getafe": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Getafe%20CF.png",
+  "celta_vigo": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Celta%20de%20Vigo.png",
+  "rayo_vallecano": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Rayo%20Vallecano.png",
+  "alaves": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/Deportivo%20Alav%C3%A9s.png",
+  "espanyol": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Spain%20-%20LaLiga/RCD%20Espanyol%20Barcelona.png",
+  "man_city": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Manchester%20City.png",
+  "arsenal": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Arsenal%20FC.png",
+  "liverpool": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Liverpool%20FC.png",
+  "chelsea": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Chelsea%20FC.png",
+  "man_united": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Manchester%20United.png",
+  "tottenham": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Tottenham%20Hotspur.png",
+  "newcastle": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Newcastle%20United.png",
+  "aston_villa": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Aston%20Villa.png",
+  "brighton": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Brighton%20%26%20Hove%20Albion.png",
+  "fulham": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Fulham%20FC.png",
+  "bournemouth": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/AFC%20Bournemouth.png",
+  "crystal_palace": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Crystal%20Palace.png",
+  "brentford": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Brentford%20FC.png",
+  "everton": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Everton%20FC.png",
+  "nottingham": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Nottingham%20Forest.png",
+  "ipswich": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/England%20-%20Premier%20League/Ipswich%20Town.png",
+  "inter_milan": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/Inter%20Milan.png",
+  "juventus": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/Juventus%20FC.png",
+  "ac_milan": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/AC%20Milan.png",
+  "napoli": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/SSC%20Napoli.png",
+  "atalanta": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/Atalanta%20BC.png",
+  "roma": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/AS%20Roma.png",
+  "lazio": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/SS%20Lazio.png",
+  "fiorentina": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/ACF%20Fiorentina.png",
+  "bologna": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/Bologna%20FC%201909.png",
+  "torino": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/Torino%20FC.png",
+  "monza": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/AC%20Monza.png",
+  "genoa": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/Genoa%20CFC.png",
+  "udinese": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/Udinese%20Calcio.png",
+  "cagliari": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/Cagliari%20Calcio.png",
+  "parma": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/Parma%20Calcio%201913.png",
+  "como": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/Como%201907.png",
+  "lecce": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/US%20Lecce.png",
+  "venezia": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Italy%20-%20Serie%20A/Venezia%20FC.png",
+  "bayern": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/Bayern%20Munich.png",
+  "leverkusen": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/Bayer%2004%20Leverkusen.png",
+  "dortmund": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/Borussia%20Dortmund.png",
+  "rb_leipzig": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/RB%20Leipzig.png",
+  "stuttgart": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/VfB%20Stuttgart.png",
+  "frankfurt": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/Eintracht%20Frankfurt.png",
+  "gladbach": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/Borussia%20M%C3%B6nchengladbach.png",
+  "freiburg": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/SC%20Freiburg.png",
+  "hoffenheim": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/TSG%201899%20Hoffenheim.png",
+  "augsburg": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/FC%20Augsburg.png",
+  "werder_bremen": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/SV%20Werder%20Bremen.png",
+  "mainz": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/1.FSV%20Mainz%2005.png",
+  "union_berlin": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/Germany%20-%20Bundesliga/1.FC%20Union%20Berlin.png",
+  "psg": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/Paris%20Saint-Germain.png",
+  "monaco": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/AS%20Monaco.png",
+  "lille": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/LOSC%20Lille.png",
+  "marseille": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/Olympique%20Marseille.png",
+  "lyon": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/Olympique%20Lyon.png",
+  "lens": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/RC%20Lens.png",
+  "nice": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/OGC%20Nice.png",
+  "rennes": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/Stade%20Rennais%20FC.png",
+  "strasbourg": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/RC%20Strasbourg%20Alsace.png",
+  "brest": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/Stade%20Brestois%2029.png",
+  "toulouse": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/FC%20Toulouse.png",
+  "auxerre": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/AJ%20Auxerre.png",
+  "angers": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/Angers%20SCO.png",
+  "le_havre": "https://raw.githubusercontent.com/luukhopman/football-logos/master/logos/France%20-%20Ligue%201/Le%20Havre%20AC.png"
+};
+let resolvedCrestMap = { ...STATIC_CREST_MAP };
 
 const CLUB_NAME_ALIASES = {
-  real_madrid: ['real madrid'],
-  barcelona: ['barcelona', 'fc barcelona'],
-  atletico_madrid: ['atletico madrid', 'atletico de madrid'],
-  athletic_bilbao: ['athletic club', 'athletic bilbao'],
-  real_sociedad: ['real sociedad'],
   girona: ['girona', 'girona fc'],
-  real_betis: ['real betis', 'betis'],
-  villarreal: ['villarreal', 'villarreal cf'],
-  sevilla: ['sevilla', 'sevilla fc'],
-  valencia: ['valencia', 'valencia cf'],
-  osasuna: ['osasuna', 'ca osasuna'],
-  getafe: ['getafe', 'getafe cf'],
-  celta_vigo: ['celta vigo', 'celta de vigo', 'rc celta'],
   mallorca: ['mallorca', 'rcd mallorca'],
-  rayo_vallecano: ['rayo vallecano'],
   las_palmas: ['las palmas', 'ud las palmas'],
-  alaves: ['alaves', 'deportivo alaves'],
-  espanyol: ['espanyol', 'rcd espanyol'],
   leganes: ['leganes', 'cd leganes'],
   valladolid: ['real valladolid', 'valladolid'],
-  man_city: ['manchester city'],
-  arsenal: ['arsenal'],
-  liverpool: ['liverpool'],
-  chelsea: ['chelsea', 'chelsea fc'],
-  man_united: ['manchester united'],
-  tottenham: ['tottenham hotspur', 'tottenham'],
-  newcastle: ['newcastle united', 'newcastle'],
-  aston_villa: ['aston villa'],
   west_ham: ['west ham united', 'west ham'],
-  brighton: ['brighton & hove albion', 'brighton and hove albion', 'brighton'],
   wolves: ['wolverhampton wanderers', 'wolverhampton', 'wolves'],
-  fulham: ['fulham', 'fulham fc'],
-  bournemouth: ['afc bournemouth', 'bournemouth'],
-  crystal_palace: ['crystal palace'],
-  brentford: ['brentford', 'brentford fc'],
-  everton: ['everton', 'everton fc'],
   leicester: ['leicester city', 'leicester'],
-  nottingham: ['nottingham forest'],
-  ipswich: ['ipswich town', 'ipswich'],
   southampton: ['southampton', 'southampton fc'],
-  inter_milan: ['internazionale', 'inter milan', 'inter'],
-  juventus: ['juventus'],
-  ac_milan: ['ac milan', 'milan'],
-  napoli: ['napoli', 'ssc napoli'],
-  atalanta: ['atalanta', 'atalanta bc'],
-  roma: ['as roma', 'roma'],
-  lazio: ['lazio', 'ss lazio'],
-  fiorentina: ['fiorentina', 'acf fiorentina'],
-  bologna: ['bologna', 'bologna fc'],
-  torino: ['torino', 'torino fc'],
-  monza: ['monza', 'ac monza'],
-  genoa: ['genoa', 'genoa cfc'],
   verona: ['hellas verona', 'verona'],
-  udinese: ['udinese', 'udinese calcio'],
-  cagliari: ['cagliari', 'cagliari calcio'],
   empoli: ['empoli', 'empoli fc'],
-  parma: ['parma', 'parma calcio'],
-  como: ['como', 'como 1907'],
-  lecce: ['lecce', 'us lecce'],
-  venezia: ['venezia', 'venezia fc'],
-  bayern: ['bayern munich', 'bayern munchen', 'fc bayern munich', 'fc bayern munchen'],
-  leverkusen: ['bayer leverkusen', 'bayer 04 leverkusen'],
-  dortmund: ['borussia dortmund', 'dortmund'],
-  rb_leipzig: ['rb leipzig', 'leipzig'],
-  stuttgart: ['vfb stuttgart', 'stuttgart'],
-  frankfurt: ['eintracht frankfurt', 'frankfurt'],
   wolfsburg: ['vfl wolfsburg', 'wolfsburg'],
-  gladbach: ['borussia monchengladbach', 'borussia mgladbach', 'monchengladbach'],
-  freiburg: ['sc freiburg', 'freiburg'],
-  hoffenheim: ['tsg hoffenheim', 'hoffenheim'],
-  augsburg: ['fc augsburg', 'augsburg'],
-  werder_bremen: ['werder bremen', 'sv werder bremen'],
-  mainz: ['mainz', 'mainz 05', '1 fsv mainz 05', 'fsv mainz 05'],
   heidenheim: ['1 fc heidenheim', '1 fc heidenheim 1846', 'fc heidenheim', 'heidenheim'],
-  union_berlin: ['union berlin', '1 fc union berlin', 'fc union berlin'],
   bochum: ['vfl bochum', 'bochum'],
   st_pauli: ['fc st pauli', 'st pauli'],
   kiel: ['holstein kiel', 'kiel'],
-  psg: ['paris saint germain', 'paris saint-germain', 'psg'],
-  monaco: ['as monaco', 'monaco'],
-  lille: ['lille', 'losc lille', 'lille osc'],
-  marseille: ['marseille', 'olympique marseille', 'olympique de marseille'],
-  lyon: ['lyon', 'olympique lyonnais'],
-  lens: ['lens', 'rc lens'],
-  nice: ['nice', 'ogc nice'],
-  rennes: ['rennes', 'stade rennais', 'stade rennais fc'],
   reims: ['reims', 'stade de reims', 'stade reims'],
-  strasbourg: ['strasbourg', 'rc strasbourg', 'rc strasbourg alsace'],
-  brest: ['brest', 'stade brestois', 'stade brestois 29'],
   montpellier: ['montpellier', 'montpellier hsc'],
-  toulouse: ['toulouse', 'toulouse fc'],
   nantes: ['nantes', 'fc nantes'],
-  auxerre: ['auxerre', 'aj auxerre'],
-  angers: ['angers', 'angers sco'],
-  saint_etienne: ['saint etienne', 'as saint etienne', 'st etienne'],
-  le_havre: ['le havre', 'le havre ac']
+  saint_etienne: ['saint etienne', 'as saint etienne', 'st etienne']
 };
 
 function normalizeClubKey(str) {
@@ -158,8 +160,7 @@ function saveCachedCrestMap(map) {
 }
 
 function applyCrestMapToState(map) {
-  if (!map || typeof map !== 'object') return;
-  resolvedCrestMap = { ...resolvedCrestMap, ...map };
+  resolvedCrestMap = { ...(map || {}), ...STATIC_CREST_MAP };
 
   const syncClub = (club) => {
     if (!club || !club.id) return;
@@ -205,9 +206,7 @@ function applyHydratedCrestsToDom() {
     if (!url) return;
 
     if (el.tagName === 'IMG') {
-      if (el.src !== url) {
-        el.src = url;
-      }
+      if (el.src !== url) el.src = url;
     } else {
       const shortName = el.getAttribute('data-short') || 'FC';
       const color = el.getAttribute('data-color') || '#00f0ff';
@@ -229,92 +228,72 @@ function applyHydratedCrestsToDom() {
   });
 }
 
-async function fetchEspnLeagueLogos(slug, retries = 1) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/teams`);
-      if (!res.ok) {
-        if (attempt < retries) {
-          await new Promise((r) => setTimeout(r, 350));
-          continue;
-        }
-        return [];
-      }
-      const data = await res.json();
-      const rawTeams = data?.sports?.[0]?.leagues?.[0]?.teams || [];
-      return rawTeams.map((entry) => {
-        const t = entry?.team || entry;
-        const logo = t?.logos?.[0]?.href || (t?.id ? `https://a.espncdn.com/i/teamlogos/soccer/500/${t.id}.png` : '');
-        return {
-          id: t?.id,
-          names: [t?.displayName, t?.shortDisplayName, t?.name, t?.location].filter(Boolean).map(normalizeClubKey),
-          abbr: String(t?.abbreviation || '').toUpperCase(),
-          logo
-        };
-      }).filter((t) => t.logo);
-    } catch (e) {
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, 350));
-        continue;
-      }
-      return [];
-    }
+async function fetchEspnLeagueLogos(slug) {
+  try {
+    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/teams`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const rawTeams = data?.sports?.[0]?.leagues?.[0]?.teams || [];
+    return rawTeams.map((entry) => {
+      const t = entry?.team || entry;
+      const logo = t?.logos?.[0]?.href || (t?.id ? `https://a.espncdn.com/i/teamlogos/soccer/500/${t.id}.png` : '');
+      return {
+        names: [t?.displayName, t?.shortDisplayName, t?.name, t?.location].filter(Boolean).map(normalizeClubKey),
+        logo
+      };
+    }).filter((t) => t.logo);
+  } catch (e) {
+    return [];
   }
-  return [];
-}
-
-function matchTeamsToClubs(clubs, espnTeams, targetMap) {
-  clubs.forEach((club) => {
-    if (!club || targetMap[club.id]) return;
-    const aliases = new Set([
-      normalizeClubKey(club.name),
-      ...(CLUB_NAME_ALIASES[club.id] || []).map(normalizeClubKey)
-    ]);
-
-    let hit = espnTeams.find((et) => et.names.some((n) => aliases.has(n)));
-    if (!hit) {
-      hit = espnTeams.find((et) => et.names.some((n) => {
-        for (const a of aliases) {
-          if (a.length >= 4 && (n.includes(a) || a.includes(n))) return true;
-        }
-        return false;
-      }));
-    }
-    if (hit && hit.logo) {
-      targetMap[club.id] = hit.logo;
-    }
-  });
 }
 
 async function hydrateRealClubCrests() {
   if (typeof fetch !== 'function') return;
   const cached = loadCachedCrestMap();
+  applyCrestMapToState(cached);
+  applyHydratedCrestsToDom();
+
   const clubs = (typeof state !== 'undefined' && Array.isArray(state.clubs) && state.clubs.length)
     ? state.clubs
     : (typeof INITIAL_CLUBS !== 'undefined' ? INITIAL_CLUBS : []);
 
-  if (Object.keys(cached).length > 0) {
-    applyCrestMapToState(cached);
-    applyHydratedCrestsToDom();
-  }
-
-  if (clubs.every((c) => Boolean(resolvedCrestMap[c.id]))) return;
+  const missing = clubs.filter((c) => !resolvedCrestMap[c.id]);
+  if (!missing.length) return;
 
   const updated = { ...resolvedCrestMap };
-  const leagues = ['esp.1', 'eng.1', 'ita.1', 'ger.1', 'fra.1', 'esp.2', 'eng.2', 'ita.2', 'ger.2', 'fra.2'];
-  for (const slug of leagues) {
+  const slugs = ['esp.2', 'eng.2', 'ita.2', 'ger.2', 'fra.2', 'esp.1', 'eng.1', 'ita.1', 'ger.1', 'fra.1'];
+  for (const slug of slugs) {
     if (clubs.every((c) => Boolean(updated[c.id]))) break;
-    const teams = await fetchEspnLeagueLogos(slug, 1);
-    if (teams.length) {
-      const before = Object.keys(updated).length;
-      matchTeamsToClubs(clubs, teams, updated);
-      if (Object.keys(updated).length > before) {
+    const espnTeams = await fetchEspnLeagueLogos(slug);
+    if (espnTeams.length) {
+      let changed = false;
+      clubs.forEach((club) => {
+        if (!club || updated[club.id]) return;
+        const aliases = new Set([
+          normalizeClubKey(club.name),
+          ...(CLUB_NAME_ALIASES[club.id] || []).map(normalizeClubKey)
+        ]);
+        let hit = espnTeams.find((et) => et.names.some((n) => aliases.has(n)));
+        if (!hit) {
+          hit = espnTeams.find((et) => et.names.some((n) => {
+            for (const a of aliases) {
+              if (a.length >= 4 && (n.includes(a) || a.includes(n))) return true;
+            }
+            return false;
+          }));
+        }
+        if (hit && hit.logo) {
+          updated[club.id] = hit.logo;
+          changed = true;
+        }
+      });
+      if (changed) {
         applyCrestMapToState(updated);
         saveCachedCrestMap(updated);
         applyHydratedCrestsToDom();
       }
     }
-    await new Promise((r) => setTimeout(r, 120));
+    await new Promise((r) => setTimeout(r, 150));
   }
 }
 
