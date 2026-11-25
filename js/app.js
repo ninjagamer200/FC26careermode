@@ -26,15 +26,9 @@ window.handleCrestError = function(imgEl) {
   imgEl.replaceWith(badge);
 };
 
-// Official Real Club Crest Hydrator (ESPN Public CDN + localStorage cache) & Throttled Lazy Loader
-const CREST_CACHE_KEY = 'fc26_espn_crest_cache_v2';
+// Official Real Club Crest Hydrator (ESPN Public CDN + localStorage cache)
+const CREST_CACHE_KEY = 'fc26_espn_crest_cache_v3';
 const CREST_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const CREST_PLACEHOLDER_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-const crestLoadQueue = [];
-let activeCrestLoads = 0;
-const MAX_CONCURRENT_CREST_LOADS = 6;
-let crestObserver = null;
-let crestScanTimer = null;
 let resolvedCrestMap = {};
 
 const CLUB_NAME_ALIASES = {
@@ -211,23 +205,16 @@ function applyHydratedCrestsToDom() {
     if (!url) return;
 
     if (el.tagName === 'IMG') {
-      if (el.src !== url && el.getAttribute('data-crest-src') !== url) {
-        if (el.dataset.crestEager === '1') {
-          el.removeAttribute('data-crest-src');
-          el.src = url;
-        } else {
-          el.setAttribute('data-crest-src', url);
-          el.dataset.crestObserved = '0';
-          el.dataset.crestQueued = '0';
-        }
+      if (el.src !== url) {
+        el.src = url;
       }
     } else {
       const shortName = el.getAttribute('data-short') || 'FC';
       const color = el.getAttribute('data-color') || '#00f0ff';
       const baseStyle = el.getAttribute('data-crest-style') || 'width:28px;height:28px;';
-      const eager = el.getAttribute('data-crest-eager') === '1';
       const img = document.createElement('img');
       img.alt = shortName;
+      img.loading = 'lazy';
       img.decoding = 'async';
       img.referrerPolicy = 'no-referrer';
       img.style.cssText = `${baseStyle}; object-fit: contain; vertical-align: middle; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));`;
@@ -236,39 +223,44 @@ function applyHydratedCrestsToDom() {
       img.setAttribute('data-crest-club-id', clubId);
       img.setAttribute('data-crest-style', baseStyle);
       img.setAttribute('onerror', 'window.handleCrestError(this)');
-      if (eager) {
-        img.dataset.crestEager = '1';
-        img.src = url;
-      } else {
-        img.loading = 'lazy';
-        img.src = CREST_PLACEHOLDER_SRC;
-        img.setAttribute('data-crest-src', url);
-      }
+      img.src = url;
       el.replaceWith(img);
     }
   });
-  scheduleLazyCrestScan();
 }
 
-async function fetchEspnLeagueLogos(slug) {
-  try {
-    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/teams?limit=100`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    const rawTeams = data?.sports?.[0]?.leagues?.[0]?.teams || [];
-    return rawTeams.map((entry) => {
-      const t = entry?.team || entry;
-      const logo = t?.logos?.[0]?.href || (t?.id ? `https://a.espncdn.com/i/teamlogos/soccer/500/${t.id}.png` : '');
-      return {
-        id: t?.id,
-        names: [t?.displayName, t?.shortDisplayName, t?.name, t?.location].filter(Boolean).map(normalizeClubKey),
-        abbr: String(t?.abbreviation || '').toUpperCase(),
-        logo
-      };
-    }).filter((t) => t.logo);
-  } catch (e) {
-    return [];
+async function fetchEspnLeagueLogos(slug, retries = 1) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/teams`);
+      if (!res.ok) {
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, 350));
+          continue;
+        }
+        return [];
+      }
+      const data = await res.json();
+      const rawTeams = data?.sports?.[0]?.leagues?.[0]?.teams || [];
+      return rawTeams.map((entry) => {
+        const t = entry?.team || entry;
+        const logo = t?.logos?.[0]?.href || (t?.id ? `https://a.espncdn.com/i/teamlogos/soccer/500/${t.id}.png` : '');
+        return {
+          id: t?.id,
+          names: [t?.displayName, t?.shortDisplayName, t?.name, t?.location].filter(Boolean).map(normalizeClubKey),
+          abbr: String(t?.abbreviation || '').toUpperCase(),
+          logo
+        };
+      }).filter((t) => t.logo);
+    } catch (e) {
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 350));
+        continue;
+      }
+      return [];
+    }
   }
+  return [];
 }
 
 function matchTeamsToClubs(clubs, espnTeams, targetMap) {
@@ -306,96 +298,23 @@ async function hydrateRealClubCrests() {
     applyHydratedCrestsToDom();
   }
 
-  const missingCount = () => clubs.filter((c) => !resolvedCrestMap[c.id]).length;
-  if (missingCount() === 0) return;
+  if (clubs.every((c) => Boolean(resolvedCrestMap[c.id]))) return;
 
   const updated = { ...resolvedCrestMap };
-  const topLeagues = ['esp.1', 'eng.1', 'ita.1', 'ger.1', 'fra.1'];
-  const topResults = await Promise.all(topLeagues.map(fetchEspnLeagueLogos));
-  matchTeamsToClubs(clubs, topResults.flat(), updated);
-
-  if (clubs.some((c) => !updated[c.id])) {
-    const secondLeagues = ['esp.2', 'eng.2', 'ita.2', 'ger.2', 'fra.2'];
-    const secondResults = await Promise.all(secondLeagues.map(fetchEspnLeagueLogos));
-    matchTeamsToClubs(clubs, secondResults.flat(), updated);
-  }
-
-  if (Object.keys(updated).length > Object.keys(resolvedCrestMap).length) {
-    applyCrestMapToState(updated);
-    saveCachedCrestMap(updated);
-    applyHydratedCrestsToDom();
-  }
-}
-
-function pumpCrestQueue() {
-  while (activeCrestLoads < MAX_CONCURRENT_CREST_LOADS && crestLoadQueue.length > 0) {
-    const img = crestLoadQueue.shift();
-    if (!img || !img.isConnected) continue;
-    const realSrc = img.getAttribute('data-crest-src');
-    if (!realSrc) continue;
-
-    img.removeAttribute('data-crest-src');
-    activeCrestLoads++;
-    const finish = () => {
-      activeCrestLoads = Math.max(0, activeCrestLoads - 1);
-      setTimeout(pumpCrestQueue, 30);
-    };
-    img.addEventListener('load', finish, { once: true });
-    img.addEventListener('error', finish, { once: true });
-    img.src = realSrc;
-  }
-}
-
-function enqueueCrestImg(img) {
-  if (!img || !img.getAttribute('data-crest-src')) return;
-  if (img.dataset.crestQueued === '1') return;
-  img.dataset.crestQueued = '1';
-  crestLoadQueue.push(img);
-  pumpCrestQueue();
-}
-
-function scanLazyCrests(root = document) {
-  if (!root || typeof root.querySelectorAll !== 'function') return;
-  const pending = root.querySelectorAll('img[data-crest-src]');
-  if (!pending.length) return;
-
-  if (typeof IntersectionObserver !== 'undefined') {
-    if (!crestObserver) {
-      crestObserver = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const target = entry.target;
-            crestObserver.unobserve(target);
-            enqueueCrestImg(target);
-          }
-        });
-      }, { rootMargin: '160px 0px' });
+  const leagues = ['esp.1', 'eng.1', 'ita.1', 'ger.1', 'fra.1', 'esp.2', 'eng.2', 'ita.2', 'ger.2', 'fra.2'];
+  for (const slug of leagues) {
+    if (clubs.every((c) => Boolean(updated[c.id]))) break;
+    const teams = await fetchEspnLeagueLogos(slug, 1);
+    if (teams.length) {
+      const before = Object.keys(updated).length;
+      matchTeamsToClubs(clubs, teams, updated);
+      if (Object.keys(updated).length > before) {
+        applyCrestMapToState(updated);
+        saveCachedCrestMap(updated);
+        applyHydratedCrestsToDom();
+      }
     }
-    pending.forEach((img) => {
-      if (img.dataset.crestObserved === '1') return;
-      img.dataset.crestObserved = '1';
-      crestObserver.observe(img);
-    });
-  } else {
-    pending.forEach(enqueueCrestImg);
-  }
-}
-
-function scheduleLazyCrestScan() {
-  if (crestScanTimer) clearTimeout(crestScanTimer);
-  crestScanTimer = setTimeout(() => scanLazyCrests(document), 25);
-}
-
-if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
-  const startCrestMutationObserver = () => {
-    if (!document.body) return;
-    const mo = new MutationObserver(() => scheduleLazyCrestScan());
-    mo.observe(document.body, { childList: true, subtree: true });
-  };
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startCrestMutationObserver);
-  } else {
-    startCrestMutationObserver();
+    await new Promise((r) => setTimeout(r, 120));
   }
 }
 
@@ -419,18 +338,15 @@ function renderCrestHtml(crestUrl, clubOrShort = 'FC', style = 'width:28px;heigh
     effectiveUrl = '';
   }
 
-  const clubAttr = clubId ? ` data-crest-club-id="${clubId}" data-crest-style="${style}" data-crest-eager="${eager ? '1' : '0'}"` : '';
+  const clubAttr = clubId ? ` data-crest-club-id="${clubId}" data-crest-style="${style}"` : '';
   const fallbackBadge = `<span class="club-badge-fallback"${clubAttr} data-short="${tagText}" data-color="${color}" style="${style}; display:inline-flex; align-items:center; justify-content:center; background: linear-gradient(135deg, ${color}, #111827); border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; font-size: 0.7rem; font-weight: 900; color: #ffffff; text-shadow: 0 1px 3px rgba(0,0,0,0.9); box-shadow: 0 2px 6px rgba(0,0,0,0.5); text-transform: uppercase; user-select:none; line-height:1;">${tagText}</span>`;
 
   if (!effectiveUrl || typeof effectiveUrl !== 'string' || effectiveUrl.trim() === '') {
     return fallbackBadge;
   }
 
-  if (eager) {
-    return `<img src="${effectiveUrl}" alt="${shortName}" decoding="async" referrerpolicy="no-referrer"${clubAttr} style="${style}; object-fit: contain; vertical-align: middle; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));" data-short="${tagText}" data-color="${color}" onError="window.handleCrestError(this)" />`;
-  }
-
-  return `<img src="${CREST_PLACEHOLDER_SRC}" data-crest-src="${effectiveUrl}" alt="${shortName}" loading="lazy" decoding="async" referrerpolicy="no-referrer"${clubAttr} style="${style}; object-fit: contain; vertical-align: middle; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));" data-short="${tagText}" data-color="${color}" onError="window.handleCrestError(this)" />`;
+  const loadingAttr = eager ? '' : ' loading="lazy"';
+  return `<img src="${effectiveUrl}" alt="${shortName}"${loadingAttr} decoding="async" referrerpolicy="no-referrer"${clubAttr} style="${style}; object-fit: contain; vertical-align: middle; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));" data-short="${tagText}" data-color="${color}" onError="window.handleCrestError(this)" />`;
 }
 const CLUB_STADIUMS = {
   real_madrid: 'Santiago Bernabéu', barcelona: 'Spotify Camp Nou', atletico_madrid: 'Cívitas Metropolitano',
@@ -492,7 +408,6 @@ function bootApp() {
   renderOffice();
   renderStandingsTable();
   renderCompetitionsHub();
-  scheduleLazyCrestScan();
   hydrateRealClubCrests();
 }
 
